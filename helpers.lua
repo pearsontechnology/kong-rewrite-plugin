@@ -1,4 +1,5 @@
 local cjson = require "cjson"
+local url = require "socket.url"
 
 local string_find = string.find
 
@@ -62,12 +63,57 @@ local function parse_json(body)
   end
 end
 
-local function mapTo(src,  map)
+local function parse_token(str)
+  local isToken = str:match("^{[^}]*}$")
+  if not isToken then
+    return
+  end
+  local token = str:sub(2, #str-1)
+  local multi = token:sub(#token)=="*"
+  local name = multi and token:sub(1, #token-1) or token
+  return {
+    token = token,
+    name = name,
+    multi = multi
+  }
+end
+
+local function parse_path(path, sep)
+  local sep = sep or "/"
+  local parts = {}
+  local fields = {}
+  local token
+  local pattern = string.format("([^%s]+)", sep)
+  path:gsub(pattern, function(c) parts[#parts+1] = c end)
+  for i, v in pairs(parts) do
+    token = parse_token(v)
+    fields[#fields+1] = token and token or {symbol = v}
+  end
+  return fields
+end
+
+local function parse_url(host_url)
+  local parsed_url = url.parse(host_url)
+  if not parsed_url.port then
+    if parsed_url.scheme == "http" then
+      parsed_url.port = 80
+     elseif parsed_url.scheme == HTTPS then
+      parsed_url.port = 443
+     end
+  end
+  if not parsed_url.path then
+    parsed_url.path = "/"
+  end
+  parsed_url.path_parts = parse_path(parsed_url.path)
+  return parsed_url
+end
+
+local function mapTo(scope, map)
   local mtype = type(map)
   if mtype == "table" then
     local res = {}
     for k, v in pairs(map) do
-      res[k] = mapTo(src, v)
+      res[k] = mapTo(scope, v)
     end
     return res
   end
@@ -79,7 +125,11 @@ local function mapTo(src,  map)
     if not f then
       return nil, m
     end
-    setfenv(f, getfenv(2))
+    local env = getfenv(2)
+    for k, v in pairs(scope) do
+      env[k] = v
+    end
+    setfenv(f, env)
     local ok, worker, err = pcall(f)
     return mapTo(src, worker)
   end
@@ -152,13 +202,116 @@ local function keys(t)
   return keyset
 end
 
+local function create_routes_tree_array(routes)
+  local tree = {}
+  local parts, root, symbol
+  local params = {}
+  local tail
+  for k, v in pairs(routes) do
+    if type(v) == 'table' then
+      local routePath = v.route
+      params = {}
+      parts = parse_path(routePath)
+      root = tree
+      for p, info in pairs(parts) do
+        if info.name then
+          params[info.name] = table.extend(info, {index = p})
+        end
+        symbol = info.symbol and info.symbol or '{*}'
+        if not root[symbol] then
+          root[symbol] = {}
+        end
+        root = root[symbol]
+        tail = info
+      end
+      if root['{e}'] then
+        local errorMsg = "Route " .. routePath .. " already defined as " .. root['{e}'].path .. ""
+        local err = {error = errorMsg, existing = root['{e}'], collision = {path = routePath, config = v}}
+        return err, true
+      end
+      root['{e}'] = {path = routePath, config = v, params = params, info = tail}
+    end
+  end
+  return tree, false
+end
+
+local function create_routes_tree_dict(routes)
+  local tree = {}
+  local parts, root, symbol
+  local params = {}
+  local tail
+  for k, v in pairs(routes) do
+    if type(v) == 'table' then
+      params = {}
+      parts = parse_path(k)
+      root = tree
+      for p, info in pairs(parts) do
+        if info.name then
+          params[info.name] = table.extend(info, {index = p})
+        end
+        symbol = info.symbol and info.symbol or '{*}'
+        if not root[symbol] then
+          root[symbol] = {}
+        end
+        root = root[symbol]
+        tail = info
+      end
+      if root['{e}'] then
+        local errorMsg = "Route " .. k .. " already defined as " .. root['{e}'].path .. ""
+        local err = {error = errorMsg, existing = root['{e}'], collision = {path = k, config = v}}
+        return err, true
+      end
+      root['{e}'] = {path = k, config = v, params = params, info = tail}
+    end
+  end
+  return tree, false
+end
+
+local function find_routes_tree_entity(route, tree)
+  local segments = parse_path(route)
+  local segmentValues = {}
+  local leaf = tree
+  local tail = false
+  local segment
+  for k, v in pairs(segments) do
+    segmentValues[#segmentValues+1] = v.symbol
+  end
+  for i, v in pairs(segments) do
+    segment = v.symbol
+    leaf = leaf[segment] or leaf['{*}']
+    if not leaf then
+      return tail and table.extend(tail['{e}'], {segments = segmentValues})
+    end
+    if leaf['{e}'] and leaf['{e}'].info.multi then
+      tail = leaf
+    end
+  end
+  if leaf['{e}'] then
+    return table.extend(leaf['{e}'], {segments = segmentValues})
+  end
+  return tail and table.extend(tail, {segments = segmentValues}) or false
+end
+
+local function subrange(t, first, last)
+  local sub = {}
+  local last = last and last or #t
+  for i=first,last do
+    sub[#sub + 1] = t[i]
+  end
+  return sub
+end
 
 return {
   mapTo = mapTo,
   parse_json = parse_json,
+  parse_path = parse_path,
+  parse_url = parse_url,
   get_content_type = get_content_type,
   isempty = isempty,
   log = log,
   dump = dump,
   keys = keys,
+  create_routes_tree = create_routes_tree_array,
+  find_routes_tree_entity = find_routes_tree_entity,
+  subrange = subrange,
 }
