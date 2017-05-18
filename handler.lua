@@ -138,7 +138,7 @@ local function get_req(get_body)
   }
 end
 
-local function get_res(res, options)
+local function get_res(res, conf, options)
   if options.header_filter then
     res.headers = ngx.header
     res.content_type_value = res.headers["content-type"]
@@ -149,18 +149,23 @@ local function get_res(res, options)
     local chunk, eof = ngx.arg[1], ngx.arg[2]
     res.body = (res.body or "")..chunk
     res.eof = eof
+    ngx.arg[1] = nil
     if eof then
       local content_type = res.content_type
       local body = res.body
-      if content_type == 'json' and not isempty(conf.response_json) then
+      if content_type == 'json' then
         local json, err = cjson.decode(body)
-        res.payload = err and body or json
+        if err then
+          log.error('JSON response:ERROR ', dump(err), ' in ', body)
+          res.payload = err
+        else
+          res.payload = json
+        end
       else
         res.payload = body
       end
       return res
     end
-    ngx.arg[1] = nil
   end
   return res
 end
@@ -168,13 +173,14 @@ end
 local function get_scope(conf, options)
   local scope = ngx.ctx.scope or {}
   scope.req = scope.req or get_req(options.access)
-  scope.res = get_res(scope.res or {}, options)
+  scope.res = get_res(scope.res or {}, conf, options)
   return scope
 end
 
 function RewriteHandler:access(conf)
   RewriteHandler.super.access(self)
   checkRefreshRoutesCache(conf)
+  ngx.ctx.scope = {}
   local scope = get_scope(conf, {access = true})
   local requestedRoute = scope.req.path
   local routeEntity = findRouteEntity(conf, requestedRoute)
@@ -202,13 +208,15 @@ end
 function RewriteHandler:body_filter(conf)
   RewriteHandler.super.body_filter(self)
   local scope = get_scope(conf, {body_filter = true})
-  local requestedRoute = scope.req.path
-  local routeConf = findRouteConf(conf, requestedRoute)
-  if not routeConf then
-    ngx.arg[1] = scope.res.body
-    return
+  if scope.res.eof then
+    local requestedRoute = scope.req.path
+    local routeConf = findRouteConf(conf, requestedRoute)
+    if not routeConf then
+      ngx.arg[1] = scope.res.body
+      return
+    end
+    response_access.body_filter(routeConf, scope)
   end
-  response_access.body_filter(routeConf, scope)
 end
 
 return RewriteHandler

@@ -24,6 +24,83 @@ function table.extend (src, ext) -- deep-copy a table
   return h
 end
 
+function table.filter (t, iter)
+  local out = {}
+  local nk=1
+
+  for k, v in pairs(t) do
+    if iter(v, k, t) then
+      out[nk] = v
+      nk = nk + 1
+    end
+  end
+
+  return out
+end
+
+function table.map (t, iter)
+  local out = {}
+
+  for k, v in pairs(t) do
+    out[k] = iter(v, k, t)
+  end
+
+  return out
+end
+
+--[[
+ngx.STDERR
+ngx.EMERG
+ngx.ALERT
+ngx.CRIT
+ngx.ERR
+ngx.WARN
+ngx.NOTICE
+ngx.INFO
+ngx.DEBUG
+]]
+
+local function log_write(level, ...)
+end
+
+local function log_error(...)
+  ngx.log(ngx.ERR, ...)
+end
+
+local function log_warn(...)
+  ngx.log(ngx.WARN, ...)
+end
+
+local function log_info(...)
+  ngx.log(ngx.INFO, ...)
+end
+
+local function log_debug(...)
+  ngx.log(ngx.DEBUG, ...)
+end
+
+local log = {
+  write = log_write,
+  error = log_error,
+  warn  = log_warn,
+  info  = log_info,
+  debug = log_debug,
+}
+
+local function dump(t, indent)
+  if indent == nil then
+    indent = ''
+  end
+  if type(t)=="table" then
+    local s = '{\n'
+    for k, v in pairs(t) do
+      s = s..indent..'  '..k..": "..dump(v, indent.."  "):gsub("^%s*(.-)%s*$", "%1").."\n"
+    end
+    return s..indent..'}\n'
+  end
+  return indent..tostring(t)
+end
+
 local function decode_args(body)
   if body then
     return ngx_decode_args(body)
@@ -121,75 +198,28 @@ local function mapTo(scope, map)
     return map(src)
   end
   if mtype == "string" then
-    local f, m = string.find(map, 'return ') and loadstring("return function(src)\n  "..map.."\nend") or loadstring("return function(src)\n  return "..map.."\nend")
+    local f, m = (string.find(map, 'return ') == 1) and loadstring("return function(src)\n  "..map.."\nend") or loadstring("return function(src)\n  return "..map.."\nend")
     if not f then
       return nil, m
     end
     local env = getfenv(2)
+    env.log = log
+    env.dump = dump
     for k, v in pairs(scope) do
       env[k] = v
     end
     setfenv(f, env)
     local ok, worker, err = pcall(f)
+    if err then
+      log_error('ERROR with map function ', err, ' in ', map)
+      return err
+    end
     return mapTo(src, worker)
   end
 end
 
 local function isempty(s)
   return s == nil or s == ''
-end
-
---[[
-ngx.STDERR
-ngx.EMERG
-ngx.ALERT
-ngx.CRIT
-ngx.ERR
-ngx.WARN
-ngx.NOTICE
-ngx.INFO
-ngx.DEBUG
-]]
-
-local function log_write(level, ...)
-end
-
-local function log_error(...)
-  ngx.log(ngx.ERR, ...)
-end
-
-local function log_warn(...)
-  ngx.log(ngx.WARN, ...)
-end
-
-local function log_info(...)
-  ngx.log(ngx.INFO, ...)
-end
-
-local function log_debug(...)
-  ngx.log(ngx.DEBUG, ...)
-end
-
-local log = {
-  write = log_write,
-  error = log_error,
-  warn  = log_warn,
-  info  = log_info,
-  debug = log_debug,
-}
-
-local function dump(t, indent)
-  if indent == nil then
-    indent = ''
-  end
-  if type(t)=="table" then
-    local s = '{\n'
-    for k, v in pairs(t) do
-      s = s..indent..'  '..k..": "..dump(v, indent.."  "):gsub("^%s*(.-)%s*$", "%1").."\n"
-    end
-    return s..indent..'}\n'
-  end
-  return indent..tostring(t)
 end
 
 local function keys(t)
