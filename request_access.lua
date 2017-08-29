@@ -37,7 +37,7 @@ local function transform_headers(conf, scope)
   if isempty(conf.request.headers) then
     return
   end
-  req_set_headers(req.headers, mapTo(scope, conf.request.headers))
+  req_set_headers(scope.req.headers, mapTo(scope, conf.request.headers))
 end
 
 local function transform_body_text(conf, scope)
