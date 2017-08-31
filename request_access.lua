@@ -18,11 +18,17 @@ local string_find = string.find
 local _M = {}
 
 local function req_set_headers(oldHeaders, newHeaders)
-  for name, value in pairs(oldHeaders) do
-    req_clear_header(name)
+  if not isempty(oldHeaders) then
+    for name, value in pairs(oldHeaders) do
+      log.info('Clearing old header '..name)
+      req_clear_header(name)
+    end
   end
-  for name, value in pairs(newHeaders) do
-    req_set_header(name, value)
+  if not isempty(newHeaders) then
+    for name, value in pairs(newHeaders) do
+      log.info('Setting new header '..name, value)
+      req_set_header(name, value)
+    end
   end
 end
 

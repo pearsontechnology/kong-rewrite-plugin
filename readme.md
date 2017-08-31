@@ -205,7 +205,9 @@ req.params
 Append a new header to the response headers:
 
 ```lua
-table.extend(res.headers, {'x-response-header' = "added to response headers"})
+local newHeaders = {}
+newHeaders['x-response-header'] = "added to response headers"
+table.extend(res.headers, newHeaders)
 ```
 
 #### text:
