@@ -198,8 +198,8 @@ local function mapTo(scope, map)
     return map(src)
   end
   if mtype == "string" then
-    --local f, m = (string.find(map, 'return ') == 1) and loadstring("return function(src)\n  "..map.."\nend") or loadstring("return function(src)\n  return "..map.."\nend")
-    local f, m = loadstring("return function(src)\n  "..map.."\nend")
+    local f, m = (string.find(map, 'return ') ~= nil) and loadstring("return function(src)\n  "..map.."\nend") or loadstring("return function(src)\n  return "..map.."\nend")
+    --local f, m = loadstring("return function(src)\n  "..map.."\nend")
     --log.info('mapTo::string ', f, m)
     if not f then
       log.error('ERROR in ', map, ' - ', f, m)
