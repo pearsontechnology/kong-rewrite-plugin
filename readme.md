@@ -179,7 +179,9 @@ table.extend(req.query, {req = "added to request querystring"})
 Append a new header to the existing request headers:
 
 ```lua
-table.extend(req.headers, {'x-request-header' = "added to request headers"})
+local newHeaders = {}
+newHeaders['x-response-header'] = "added to request headers"
+return table.extend(req.headers, newHeaders)
 ```
 
 #### text:
@@ -207,7 +209,7 @@ Append a new header to the response headers:
 ```lua
 local newHeaders = {}
 newHeaders['x-response-header'] = "added to response headers"
-table.extend(res.headers, newHeaders)
+return table.extend(res.headers, newHeaders)
 ```
 
 #### text:
