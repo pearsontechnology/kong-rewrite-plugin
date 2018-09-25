@@ -93,7 +93,12 @@ local function transform_path(conf, scope)
   end
   local uri = mapTo(scope, conf.request.path)
   if uri then
-    req_set_uri(uri)
+    -- if kong development kit exists use it to set the path
+    if kong then
+      kong.service.request.set_path(uri)
+    else
+      req_set_uri(uri)
+    end
   end
 end
 
