@@ -171,7 +171,10 @@ local function get_res(res, conf, options)
 end
 
 local function get_scope(conf, options)
-  local scope = ngx.ctx.scope or {}
+  if not ngx.ctx.scope then
+    ngx.ctx.scope = {}
+  end
+  local scope = ngx.ctx.scope
   scope.req = scope.req or get_req(options.access)
   scope.res = get_res(scope.res or {}, conf, options)
   return scope
@@ -180,7 +183,6 @@ end
 function RewriteHandler:access(conf)
   RewriteHandler.super.access(self)
   checkRefreshRoutesCache(conf)
-  ngx.ctx.scope = {}
   local scope = get_scope(conf, {access = true})
   local requestedRoute = scope.req.path
   local routeEntity = findRouteEntity(conf, requestedRoute)
@@ -196,6 +198,8 @@ end
 
 function RewriteHandler:header_filter(conf)
   RewriteHandler.super.header_filter(self)
+  -- calling checkRefreshRoutesCache in header_filter as well due to access function not being called if prior plugins exit during access
+  checkRefreshRoutesCache(conf)
   local scope = get_scope(conf, {header_filter = true})
   local requestedRoute = scope.req.path
   local routeConf = findRouteConf(conf, requestedRoute)
